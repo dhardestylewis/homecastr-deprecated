@@ -1291,13 +1291,28 @@ def _run_one_origin(
         # ---------------------------------------------------------------------
         # 2) Build inference context (no DB connection held)
         # ---------------------------------------------------------------------
+        print(f"[{_ts()}] Chunk {chunk_idx}: building inference context for {len(acct_chunk)} accts "
+              f"[{acct_chunk[0]}..{acct_chunk[-1]}] origin={origin_year}")
         ctx = _build_inference_for_accounts_at_origin(
             accts_batch=acct_chunk,
             origin=int(origin_year),
             global_medians=global_medians,
         )
 
-        if ctx is None or len(ctx["acct"]) == 0:
+        # Detailed diagnostic on the return value
+        if ctx is None:
+            _ctx_reason = "ctx=None"
+        elif not isinstance(ctx, dict):
+            _ctx_reason = f"ctx type={type(ctx).__name__} (expected dict)"
+        elif "acct" not in ctx:
+            _ctx_reason = f"ctx missing 'acct' key, keys={list(ctx.keys())}"
+        elif len(ctx["acct"]) == 0:
+            _ctx_reason = f"ctx['acct'] is empty (len=0), keys={list(ctx.keys())}"
+        else:
+            _ctx_reason = None
+
+        if _ctx_reason:
+            print(f"[{_ts()}] Chunk {chunk_idx}: ⚠️  no valid inference rows — {_ctx_reason}")
             n_done += len(acct_chunk)
 
             with _pg_tx() as conn:
@@ -1341,6 +1356,10 @@ def _run_one_origin(
             print(f"[{_ts()}] Chunk {chunk_idx}: no valid inference rows | elapsed={time.time()-t0:.1f}s")
             continue
 
+        # Inference context is valid — print diagnostic
+        n_ctx = len(ctx["acct"])
+        print(f"[{_ts()}] Chunk {chunk_idx}: ✅ {n_ctx}/{len(acct_chunk)} valid anchors, "
+              f"sample_valid={ctx['acct'][:3]}")
         # ---------------------------------------------------------------------
         # 3) Sample scenarios (adaptive backoff)
         # ---------------------------------------------------------------------
