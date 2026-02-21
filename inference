@@ -87,13 +87,9 @@ RUN_FINAL_EXACT_AGG_REFRESH = True
 # The script will query Supabase for accounts already written under that run_id
 # and skip them.  Everything else (upserts, aggregates, final refresh) is
 # idempotent so this is safe.
-RESUME_MODE = False
-
-# Paste from the previous run's log output, e.g.:
-#   RESUME_PROD_RUN_ID = "forecast_2025_20260221T050431Z_8cdcf33c7b7d4ee6a948ecc6bccca160"
-#   RESUME_SUITE_ID    = "suite_20260221T050431Z_5b263b4bbbc344fa998999209fc58549"
-RESUME_PROD_RUN_ID = None   # production forecast run_id to resume
-RESUME_SUITE_ID    = None   # suite_id to resume (reuses the Google Drive output dir)
+RESUME_MODE = True
+RESUME_PROD_RUN_ID = "forecast_2025_20260221T050431Z_8cdcf33c7b7d4ee6a948ecc6bccca160"
+RESUME_SUITE_ID    = "suite_20260221T050431Z_5b263b4bbbc344fa998999209fc58549"
 
 # For backtest resume — dict of { origin_year: (run_id, variant_id, backtest_id) }
 # Leave as None to skip backtest resume.  Example:
@@ -1134,7 +1130,17 @@ def _run_one_origin(
     progress_csv = os.path.join(run_root, "progress_log.csv")
     eval_csv = os.path.join(run_root, "backtest_eval_summary.csv")
 
-    for chunk_idx, acct_chunk in enumerate(_chunk_list(all_accts_prod, int(ACCT_BATCH_SIZE_OUTER)), start=1):
+    # Resume-safe chunk numbering: continue from where previous run left off
+    chunk_start = 1
+    if resume_run_id:
+        fc_dir = os.path.join(run_root, "forecast_chunks")
+        hist_dir = os.path.join(run_root, "history_chunks")
+        existing_fc = len([f for f in os.listdir(fc_dir) if f.endswith(('.parquet', '.csv.gz'))]) if os.path.isdir(fc_dir) else 0
+        existing_hist = len([f for f in os.listdir(hist_dir) if f.endswith(('.parquet', '.csv.gz'))]) if os.path.isdir(hist_dir) else 0
+        chunk_start = max(existing_fc, existing_hist) + 1
+        print(f"[{_ts()}] RESUME: continuing chunk numbering from {chunk_start} (found {existing_fc} fc, {existing_hist} hist chunks)")
+
+    for chunk_idx, acct_chunk in enumerate(_chunk_list(all_accts_prod, int(ACCT_BATCH_SIZE_OUTER)), start=chunk_start):
         t0 = time.time()
         acct_chunk = [str(a) for a in acct_chunk]
         used_prop_batch_size = None

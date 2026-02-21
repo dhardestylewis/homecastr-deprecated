@@ -15,7 +15,7 @@ import { useToast } from "@/hooks/use-toast"
 import type { PropertyForecast } from "@/app/actions/property-forecast"
 import { TimeControls } from "@/components/time-controls"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { AlertCircle, Plus, Minus, RotateCcw, ArrowLeftRight, Copy, Bot, Terminal, Activity } from "lucide-react"
+import { AlertCircle, Plus, Minus, RotateCcw, ArrowLeftRight, Copy, Terminal, Activity } from "lucide-react"
 import { geocodeAddress, reverseGeocode } from "@/app/actions/geocode"
 
 import { cellToLatLng, latLngToCell } from "h3-js"
@@ -580,8 +580,8 @@ function DashboardContent() {
               isChatOpen ? "left-[420px]" : "left-5"
             )}
           >
-            <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center group-hover:bg-primary/30 transition-colors">
-              <Bot className="w-4 h-4 text-primary" />
+            <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center group-hover:bg-primary/30 transition-colors overflow-hidden">
+              <img src="/homecastr-logo-cropped.png" alt="Homecastr" className="w-6 h-6 object-contain" />
             </div>
             <div className="flex flex-col items-start">
               <span className="text-xs font-semibold">Talk to Homecastr Live Agent</span>
