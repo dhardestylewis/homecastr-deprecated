@@ -1140,6 +1140,61 @@ def _run_one_origin(
         chunk_start = max(existing_fc, existing_hist) + 1
         print(f"[{_ts()}] RESUME: continuing chunk numbering from {chunk_start} (found {existing_fc} fc, {existing_hist} hist chunks)")
 
+        # ── SPOT CHECK: test 5 random future chunks before committing ──
+        import random as _rng
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        all_chunks = list(_chunk_list(all_accts_prod, int(ACCT_BATCH_SIZE_OUTER)))
+        n_chunks = len(all_chunks)
+        n_spot = min(5, n_chunks)
+        spot_idxs = sorted(_rng.sample(range(n_chunks), n_spot))
+        print(f"[{_ts()}] SPOT CHECK: testing {n_spot} random chunks out of {n_chunks} "
+              f"(chunk indices {spot_idxs}) ...")
+
+        def _test_chunk(ci):
+            """Test a single chunk, return (chunk_index, n_valid, n_total, elapsed)."""
+            chunk = [str(a) for a in all_chunks[ci]]
+            t0 = time.time()
+            try:
+                ctx = _build_inference_for_accounts_at_origin(
+                    accts_batch=chunk,
+                    origin=int(origin_year),
+                    global_medians=global_medians,
+                )
+                n_valid = len(ctx["acct"]) if ctx and "acct" in ctx else 0
+            except Exception as e:
+                print(f"[{_ts()}] SPOT CHECK chunk {ci}: error — {e}")
+                n_valid = 0
+            return ci, n_valid, len(chunk), time.time() - t0
+
+        spot_results = []
+        # Run sequentially (GPU-bound, parallelism won't help)
+        for ci in spot_idxs:
+            spot_results.append(_test_chunk(ci))
+
+        n_chunks_with_data = 0
+        total_valid = 0
+        total_tested = 0
+        for ci, nv, nt, dt in spot_results:
+            status = f"✅ {nv}/{nt} anchors" if nv > 0 else f"⚠️  0/{nt} anchors"
+            print(f"[{_ts()}] SPOT CHECK chunk {ci}: {status} ({dt:.1f}s)")
+            total_valid += nv
+            total_tested += nt
+            if nv > 0:
+                n_chunks_with_data += 1
+
+        pct = 100.0 * total_valid / max(total_tested, 1)
+        print(f"[{_ts()}] SPOT CHECK summary: {n_chunks_with_data}/{n_spot} chunks have data, "
+              f"{total_valid}/{total_tested} accounts valid ({pct:.0f}%)")
+
+        if n_chunks_with_data == 0:
+            print(f"[{_ts()}] ⚠️  ALL {n_spot} spot-check chunks produced ZERO forecasts!")
+            print(f"[{_ts()}] ⚠️  Resume may not produce new forecasts. Continuing anyway...")
+        else:
+            est_new = int(pct / 100.0 * n_total)
+            print(f"[{_ts()}] ✅ Spot check passed: expect ~{est_new:,} new forecasts")
+        # ── end spot check ──
+
     for chunk_idx, acct_chunk in enumerate(_chunk_list(all_accts_prod, int(ACCT_BATCH_SIZE_OUTER)), start=chunk_start):
         t0 = time.time()
         acct_chunk = [str(a) for a in acct_chunk]
