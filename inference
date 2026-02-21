@@ -1041,7 +1041,12 @@ def _run_one_origin(
         done_accts = _get_completed_accts_from_db(schema, run_id, "metrics_parcel_forecast")
         n_already = len(done_accts)
         all_accts_prod = [a for a in all_accts_prod if a not in done_accts]
-        print(f"[{_ts()}] RESUME: {n_already} accounts already done, {len(all_accts_prod)} remaining")
+        # Shuffle remaining accounts so chunks get a random mix of forecastable/non-forecastable
+        # (avoids runs of empty chunks when accounts are sorted by type)
+        import random as _rng
+        _rng.seed(42)  # fixed seed for reproducibility across restarts
+        _rng.shuffle(all_accts_prod)
+        print(f"[{_ts()}] RESUME: {n_already} accounts already done, {len(all_accts_prod)} remaining (shuffled)")
         if not all_accts_prod:
             print(f"[{_ts()}] RESUME: nothing left to do for this run, skipping.")
             return {
