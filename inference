@@ -1142,18 +1142,32 @@ def _run_one_origin(
 
         # ── SPOT CHECK: test 5 random future chunks before committing ──
         import random as _rng
-        from concurrent.futures import ThreadPoolExecutor, as_completed
 
         all_chunks = list(_chunk_list(all_accts_prod, int(ACCT_BATCH_SIZE_OUTER)))
         n_chunks = len(all_chunks)
         n_spot = min(5, n_chunks)
         spot_idxs = sorted(_rng.sample(range(n_chunks), n_spot))
-        print(f"[{_ts()}] SPOT CHECK: testing {n_spot} random chunks out of {n_chunks} "
+
+        # ── Diagnostic context ──
+        print(f"[{_ts()}] SPOT CHECK diag: origin_year={origin_year} (type={type(origin_year).__name__})")
+        print(f"[{_ts()}] SPOT CHECK diag: global_medians keys={len(global_medians)}, "
+              f"sample_keys={list(global_medians.keys())[:5]}")
+        print(f"[{_ts()}] SPOT CHECK diag: all_accts_prod len={len(all_accts_prod)}, "
+              f"type={type(all_accts_prod[0]).__name__} sample={all_accts_prod[:3]}")
+        print(f"[{_ts()}] SPOT CHECK diag: n_chunks={n_chunks}, "
+              f"ACCT_BATCH_SIZE_OUTER={ACCT_BATCH_SIZE_OUTER}")
+        print(f"[{_ts()}] SPOT CHECK: testing {n_spot} random chunks "
               f"(chunk indices {spot_idxs}) ...")
 
-        def _test_chunk(ci):
-            """Test a single chunk, return (chunk_index, n_valid, n_total, elapsed)."""
-            chunk = [str(a) for a in all_chunks[ci]]
+        def _test_chunk_diag(ci):
+            """Test a single chunk with full diagnostics."""
+            raw_chunk = all_chunks[ci]
+            chunk = [str(a) for a in raw_chunk]
+            n_chunk = len(chunk)
+            print(f"[{_ts()}] SPOT chunk {ci}: n_accts={n_chunk}, "
+                  f"acct_range=[{chunk[0]}..{chunk[-1]}], "
+                  f"sample_accts={chunk[:3]}, type={type(chunk[0]).__name__}")
+
             t0 = time.time()
             try:
                 ctx = _build_inference_for_accounts_at_origin(
@@ -1161,23 +1175,39 @@ def _run_one_origin(
                     origin=int(origin_year),
                     global_medians=global_medians,
                 )
-                n_valid = len(ctx["acct"]) if ctx and "acct" in ctx else 0
+                dt = time.time() - t0
+
+                if ctx is None:
+                    print(f"[{_ts()}] SPOT chunk {ci}: returned None ({dt:.1f}s)")
+                    return ci, 0, n_chunk, dt
+                elif not isinstance(ctx, dict):
+                    print(f"[{_ts()}] SPOT chunk {ci}: unexpected type={type(ctx).__name__} ({dt:.1f}s)")
+                    return ci, 0, n_chunk, dt
+                elif "acct" not in ctx:
+                    print(f"[{_ts()}] SPOT chunk {ci}: dict has no 'acct' key, keys={list(ctx.keys())} ({dt:.1f}s)")
+                    return ci, 0, n_chunk, dt
+                else:
+                    n_valid = len(ctx["acct"])
+                    print(f"[{_ts()}] SPOT chunk {ci}: {n_valid}/{n_chunk} valid anchors "
+                          f"({100.0*n_valid/n_chunk:.0f}%) ({dt:.1f}s)")
+                    if n_valid > 0:
+                        print(f"[{_ts()}] SPOT chunk {ci}: valid acct_sample={ctx['acct'][:3]}")
+                    return ci, n_valid, n_chunk, dt
             except Exception as e:
-                print(f"[{_ts()}] SPOT CHECK chunk {ci}: error — {e}")
-                n_valid = 0
-            return ci, n_valid, len(chunk), time.time() - t0
+                dt = time.time() - t0
+                import traceback
+                print(f"[{_ts()}] SPOT chunk {ci}: EXCEPTION ({dt:.1f}s): {e}")
+                traceback.print_exc()
+                return ci, 0, n_chunk, dt
 
         spot_results = []
-        # Run sequentially (GPU-bound, parallelism won't help)
         for ci in spot_idxs:
-            spot_results.append(_test_chunk(ci))
+            spot_results.append(_test_chunk_diag(ci))
 
         n_chunks_with_data = 0
         total_valid = 0
         total_tested = 0
         for ci, nv, nt, dt in spot_results:
-            status = f"✅ {nv}/{nt} anchors" if nv > 0 else f"⚠️  0/{nt} anchors"
-            print(f"[{_ts()}] SPOT CHECK chunk {ci}: {status} ({dt:.1f}s)")
             total_valid += nv
             total_tested += nt
             if nv > 0:
