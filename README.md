@@ -1,3 +1,11 @@
+> **DEPRECATED** - This repository is no longer maintained. All active development has moved to [v0-properlytic-8v](https://github.com/dhardestylewis/v0-properlytic-8v).
+
+---
+
+> ?? **DEPRECATED** — This repository is no longer maintained. All active development has moved to [v0-properlytic-8v](https://github.com/dhardestylewis/v0-properlytic-8v).
+
+---
+
 # Real estate dashboard
 
 *Automatically synced with your [v0.app](https://v0.app) deployments*
